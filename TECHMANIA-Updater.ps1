@@ -71,6 +71,9 @@ try {
         Expand-Archive -LiteralPath $downloadedArchive -DestinationPath $stagingRoot -Force
 
         $requiredFiles = @(
+            'TECHMANIA.exe',
+            'TECHMANIA_Data\Managed\Assembly-CSharp.dll',
+            'TECHMANIA_Data\Plugins\x86_64\TechmaniaNfcHook.dll',
             'Themes\Technika 2.tmtheme',
             'TECHMANIA_Data\StreamingAssets\Tracks\T2 Arcade Tutorial\track.tech',
             'TECHMANIA_Data\StreamingAssets\Tracks\T2 Arcade Tutorial\tutorial.ogg'
