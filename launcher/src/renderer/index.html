@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:">
+    <title>TECHMANIA Updater</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body class="is-booting" data-stage="check">
+    <main class="updater" aria-label="TECHMANIA updater">
+      <p id="activity-label" class="status" aria-live="polite" aria-atomic="true">Checking for updates…</p>
+      <div class="progress-track is-indeterminate" role="progressbar" aria-label="Update progress" aria-valuemin="0" aria-valuemax="100" aria-valuetext="Checking for updates">
+        <span class="progress-fill"></span>
+      </div>
+
+      <div class="recovery-actions" aria-label="Recovery actions">
+        <button id="retry-button" type="button">Retry update</button>
+        <div class="secondary-actions">
+          <button id="offline-button" type="button">Launch offline</button>
+          <button id="log-button" type="button">Open log</button>
+        </div>
+      </div>
+    </main>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

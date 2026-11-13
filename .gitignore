@@ -1,0 +1,6 @@
+.firecrawl/
+.hallmark/
+launcher/dist/
+launcher/node_modules/
+release-assets/
+
