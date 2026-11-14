@@ -8,6 +8,7 @@ const { spawnSync } = require('node:child_process');
 
 const powershell = path.join(process.env.SystemRoot, 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
 const updaterSource = path.join(__dirname, '..', '..', 'TECHMANIA-Updater.ps1');
+const swapSource = path.join(__dirname, '..', '..', 'TECHMANIA-Launcher-Swap.ps1');
 
 function write(root, relativePath, contents) {
   const target = path.join(root, relativePath);
@@ -135,21 +136,81 @@ test('installs a combined client and T2 release', () => {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
-test('promotes a staged launcher to the permanent MXGG entrypoint', () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mxgg-updater-launcher-'));
+test('installs a launcher-only release without creating another launcher executable', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mxgg-updater-launcher-release-'));
+  const gameRoot = path.join(tempRoot, 'game');
+  fs.mkdirSync(gameRoot);
+  write(gameRoot, 'MXGG-TECHMANIA-Launcher.exe', 'old-launcher');
+  const release = makeRelease(tempRoot, { 'MXGG-TECHMANIA-Launcher.update': 'new-launcher' });
+
+  const result = runUpdater(gameRoot, release);
+
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(fs.readFileSync(path.join(gameRoot, 'MXGG-TECHMANIA-Launcher.exe'), 'utf8'), 'new-launcher');
+  assert.equal(fs.existsSync(path.join(gameRoot, 'MXGG-TECHMANIA-Launcher.update')), false);
+  assert.equal(fs.existsSync(path.join(gameRoot, 'TECHMANIA-Launcher.exe')), false);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('promotes new and legacy staged launchers to the permanent MXGG entrypoint', () => {
+  for (const stagedName of ['MXGG-TECHMANIA-Launcher.update', 'TECHMANIA-Launcher.exe']) {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mxgg-updater-launcher-'));
+    const gameRoot = path.join(tempRoot, 'game');
+    fs.mkdirSync(gameRoot);
+    write(gameRoot, 'MXGG-TECHMANIA-Launcher.exe', 'old-launcher');
+    write(gameRoot, '.techmania-release', 'v-test.1');
+    write(gameRoot, stagedName, 'new-launcher');
+    const release = makeRelease(tempRoot, { 'Themes/Technika 2.tmtheme': 'unchanged-theme' });
+
+    const result = runUpdater(gameRoot, release, false);
+
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Launcher updated/);
+    assert.equal(fs.readFileSync(path.join(gameRoot, 'MXGG-TECHMANIA-Launcher.exe'), 'utf8'), 'new-launcher');
+    assert.equal(fs.existsSync(path.join(gameRoot, stagedName)), false);
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test('prefers the MXGG update and removes a leftover legacy launcher', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mxgg-updater-launcher-cleanup-'));
   const gameRoot = path.join(tempRoot, 'game');
   fs.mkdirSync(gameRoot);
   write(gameRoot, 'MXGG-TECHMANIA-Launcher.exe', 'old-launcher');
   write(gameRoot, '.techmania-release', 'v-test.1');
-  write(gameRoot, 'TECHMANIA-Launcher.exe', 'new-launcher');
+  write(gameRoot, 'MXGG-TECHMANIA-Launcher.update', 'new-launcher');
+  write(gameRoot, 'TECHMANIA-Launcher.exe', 'legacy-launcher');
   const release = makeRelease(tempRoot, { 'Themes/Technika 2.tmtheme': 'unchanged-theme' });
 
   const result = runUpdater(gameRoot, release, false);
 
   assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout, /Launcher updated/);
   assert.equal(fs.readFileSync(path.join(gameRoot, 'MXGG-TECHMANIA-Launcher.exe'), 'utf8'), 'new-launcher');
+  assert.equal(fs.existsSync(path.join(gameRoot, 'MXGG-TECHMANIA-Launcher.update')), false);
   assert.equal(fs.existsSync(path.join(gameRoot, 'TECHMANIA-Launcher.exe')), false);
+  fs.rmSync(tempRoot, { recursive: true, force: true });
+});
+
+test('swap helper installs the MXGG update and removes a legacy launcher', () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mxgg-launcher-swap-'));
+  const staged = path.join(tempRoot, 'MXGG-TECHMANIA-Launcher.update');
+  const target = path.join(tempRoot, 'MXGG-TECHMANIA-Launcher.exe');
+  const legacy = path.join(tempRoot, 'TECHMANIA-Launcher.exe');
+  const log = path.join(tempRoot, 'TECHMANIA-Launcher.log');
+  fs.writeFileSync(staged, 'new-launcher');
+  fs.writeFileSync(target, 'old-launcher');
+  fs.writeFileSync(legacy, 'legacy-launcher');
+
+  const result = spawnSync(powershell, [
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', swapSource,
+    '-StagedPath', staged, '-TargetPath', target, '-CleanupPath', legacy, '-LogPath', log
+  ], { encoding: 'utf8' });
+
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(fs.readFileSync(target, 'utf8'), 'new-launcher');
+  assert.equal(fs.existsSync(staged), false);
+  assert.equal(fs.existsSync(legacy), false);
+  assert.match(fs.readFileSync(log, 'utf8'), /Launcher update installed/);
   fs.rmSync(tempRoot, { recursive: true, force: true });
 });
 
@@ -166,6 +227,7 @@ test('rejects non-theme files in a theme-only release', () => {
   const result = runUpdater(gameRoot, release);
 
   assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout, /Selective update contains an unsupported file/);
   assert.equal(fs.readFileSync(path.join(gameRoot, 'Themes/Technika 2.tmtheme'), 'utf8'), 'old-theme');
   assert.equal(fs.existsSync(path.join(gameRoot, '.techmania-release')), false);
   fs.rmSync(tempRoot, { recursive: true, force: true });

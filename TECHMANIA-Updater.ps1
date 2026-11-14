@@ -11,7 +11,8 @@ $gameRoot = [IO.Path]::GetFullPath((Split-Path -Parent $MyInvocation.MyCommand.P
 $gameRootPrefix = $gameRoot.TrimEnd('\') + '\'
 $installedTagPath = Join-Path $gameRoot '.techmania-release'
 $launcherPath = Join-Path $gameRoot 'MXGG-TECHMANIA-Launcher.exe'
-$stagedLauncherPath = Join-Path $gameRoot 'TECHMANIA-Launcher.exe'
+$stagedLauncherPath = Join-Path $gameRoot 'MXGG-TECHMANIA-Launcher.update'
+$legacyStagedLauncherPath = Join-Path $gameRoot 'TECHMANIA-Launcher.exe'
 $launcherSwapPath = Join-Path $gameRoot 'TECHMANIA-Launcher-Swap.ps1'
 $launcherLogPath = Join-Path $gameRoot 'TECHMANIA-Launcher.log'
 
@@ -23,21 +24,35 @@ function Find-Asset($release, [string]$name) {
     return $release.assets | Where-Object { $_.name -eq $name } | Select-Object -First 1
 }
 
+function Remove-LegacyLauncher {
+    if (Test-Path -LiteralPath $legacyStagedLauncherPath -PathType Leaf) {
+        Remove-Item -LiteralPath $legacyStagedLauncherPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Install-StagedLauncher {
-    if (-not (Test-Path -LiteralPath $stagedLauncherPath -PathType Leaf)) {
+    $pendingLauncherPath = if (Test-Path -LiteralPath $stagedLauncherPath -PathType Leaf) {
+        $stagedLauncherPath
+    }
+    elseif (Test-Path -LiteralPath $legacyStagedLauncherPath -PathType Leaf) {
+        $legacyStagedLauncherPath
+    }
+    else {
         return
     }
 
     if ((Test-Path -LiteralPath $launcherPath -PathType Leaf) -and
         (Get-FileHash -LiteralPath $launcherPath -Algorithm SHA256).Hash -eq
-        (Get-FileHash -LiteralPath $stagedLauncherPath -Algorithm SHA256).Hash) {
-        Remove-Item -LiteralPath $stagedLauncherPath -Force
+        (Get-FileHash -LiteralPath $pendingLauncherPath -Algorithm SHA256).Hash) {
+        Remove-Item -LiteralPath $pendingLauncherPath -Force
+        Remove-LegacyLauncher
         return
     }
 
     try {
-        Copy-Item -LiteralPath $stagedLauncherPath -Destination $launcherPath -Force
-        Remove-Item -LiteralPath $stagedLauncherPath -Force
+        Copy-Item -LiteralPath $pendingLauncherPath -Destination $launcherPath -Force
+        Remove-Item -LiteralPath $pendingLauncherPath -Force
+        Remove-LegacyLauncher
         Write-Step 'Launcher updated.'
     }
     catch {
@@ -51,8 +66,9 @@ function Install-StagedLauncher {
         $arguments = @(
             '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
             '-File', ('"{0}"' -f $launcherSwapPath),
-            '-StagedPath', ('"{0}"' -f $stagedLauncherPath),
+            '-StagedPath', ('"{0}"' -f $pendingLauncherPath),
             '-TargetPath', ('"{0}"' -f $launcherPath),
+            '-CleanupPath', ('"{0}"' -f $legacyStagedLauncherPath),
             '-LogPath', ('"{0}"' -f $launcherLogPath)
         )
         Start-Process -FilePath $powerShell -ArgumentList $arguments -WindowStyle Hidden
@@ -65,6 +81,7 @@ try {
         throw 'Close TECHMANIA before installing an update.'
     }
 
+    Install-StagedLauncher
     Write-Step 'Checking GitHub Releases...'
     $headers = @{
         'Accept' = 'application/vnd.github+json'
@@ -81,7 +98,6 @@ try {
         $installedTag = (Get-Content -LiteralPath $installedTagPath -Raw).Trim()
     }
     if (-not $Force -and $installedTag -eq $releaseTag) {
-        Install-StagedLauncher
         Write-Step "Already up to date ($releaseTag)."
         exit 0
     }
@@ -114,8 +130,10 @@ try {
 
         $hasClient = Test-Path -LiteralPath (Join-Path $stagingRoot 'TECHMANIA.exe')
         $hasT2Theme = Test-Path -LiteralPath (Join-Path $stagingRoot 'Themes\Technika 2.tmtheme')
-        if (-not $hasClient -and -not $hasT2Theme) {
-            throw 'Update package contains neither a client nor the Technika 2 theme.'
+        $launcherUpdatePath = Join-Path $stagingRoot 'MXGG-TECHMANIA-Launcher.update'
+        $hasLauncherUpdate = Test-Path -LiteralPath $launcherUpdatePath -PathType Leaf
+        if (-not $hasClient -and -not $hasT2Theme -and -not $hasLauncherUpdate) {
+            throw 'Update package contains neither a client, the Technika 2 theme, nor a launcher update.'
         }
 
         $requiredFiles = @()
@@ -137,9 +155,11 @@ try {
         }
         if (-not $hasClient) {
             $unexpectedFile = Get-ChildItem -LiteralPath $stagingRoot -File -Recurse |
-                Where-Object Extension -ne '.tmtheme' | Select-Object -First 1
+                Where-Object { $_.Extension -ne '.tmtheme' -and
+                    -not $_.FullName.Equals($launcherUpdatePath, [StringComparison]::OrdinalIgnoreCase) } |
+                Select-Object -First 1
             if ($null -ne $unexpectedFile) {
-                throw "Theme-only update contains a non-theme file: $($unexpectedFile.Name)"
+                throw "Selective update contains an unsupported file: $($unexpectedFile.Name)"
             }
         }
 

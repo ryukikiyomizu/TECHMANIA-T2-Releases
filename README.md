@@ -19,11 +19,12 @@ npm test
 npm run pack
 ```
 
-The generated `launcher/dist/TECHMANIA-Launcher.exe` is a staged launcher update.
-The updater promotes it to `MXGG-TECHMANIA-Launcher.exe` after the running launcher
-closes, so the cabinet keeps the same entrypoint. A cabinet upgrading from an
-updater without this migration support completes the one-time swap on its next
-launcher run; later launcher updates swap automatically during the update run.
+The generated `launcher/dist/MXGG-TECHMANIA-Launcher.exe` is the standalone
+cabinet entrypoint. In an update payload, store the same bytes as
+`MXGG-TECHMANIA-Launcher.update`; the updater promotes them after the running
+launcher closes, so no second launcher executable appears. The old
+`TECHMANIA-Launcher.exe` staging name remains supported only to finish legacy
+migrations.
 
 ## Recovery updater
 

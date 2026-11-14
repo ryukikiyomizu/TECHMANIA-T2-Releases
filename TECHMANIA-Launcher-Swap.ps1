@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$StagedPath,
     [Parameter(Mandatory = $true)][string]$TargetPath,
+    [string]$CleanupPath,
     [Parameter(Mandatory = $true)][string]$LogPath
 )
 
@@ -31,6 +32,11 @@ try {
             Remove-Item -LiteralPath $StagedPath -Force
             if (Test-Path -LiteralPath $backupPath -PathType Leaf) {
                 Remove-Item -LiteralPath $backupPath -Force
+            }
+            if (-not [string]::IsNullOrWhiteSpace($CleanupPath) -and
+                -not $CleanupPath.Equals($StagedPath, [StringComparison]::OrdinalIgnoreCase) -and
+                (Test-Path -LiteralPath $CleanupPath -PathType Leaf)) {
+                Remove-Item -LiteralPath $CleanupPath -Force
             }
             Write-SwapLog 'Launcher update installed.'
             exit 0
